@@ -1,0 +1,20 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Painel</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <h2>Agendamentos</h2>
+        <table>
+            <tr><th>Nome</th><th>Horário</th></tr>
+            {% for nome, horario in agendamentos %}
+            <tr><td>{{ nome }}</td><td>{{ horario }}</td></tr>
+            {% endfor %}
+        </table>
+        <a href="/editar">Editar Mensagens</a> | <a href="/logout">Sair</a>
+    </div>
+</body>
+</html>

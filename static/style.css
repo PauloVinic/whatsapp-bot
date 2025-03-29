@@ -1,0 +1,36 @@
+
+body {
+    font-family: Arial, sans-serif;
+    background: #f0f0f0;
+}
+.container {
+    background: white;
+    padding: 20px;
+    margin: 50px auto;
+    width: 400px;
+    border-radius: 8px;
+    box-shadow: 0 0 10px rgba(0,0,0,0.1);
+}
+input, textarea {
+    width: 100%;
+    padding: 8px;
+    margin: 8px 0;
+}
+button {
+    padding: 10px 20px;
+    background: #2e86de;
+    color: white;
+    border: none;
+    cursor: pointer;
+}
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+table, th, td {
+    border: 1px solid #ccc;
+}
+th, td {
+    padding: 8px;
+    text-align: left;
+}

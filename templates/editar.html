@@ -1,0 +1,21 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Editar Mensagens</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <h2>Editar Mensagens</h2>
+        <form method="post">
+            <label>Horário de Atendimento:</label><br>
+            <textarea name="horario">{{ mensagens.horario }}</textarea><br>
+            <label>Cardápio:</label><br>
+            <textarea name="cardapio">{{ mensagens.cardapio }}</textarea><br>
+            <button type="submit">Salvar</button>
+        </form>
+        <a href="/painel">Voltar</a>
+    </div>
+</body>
+</html>
