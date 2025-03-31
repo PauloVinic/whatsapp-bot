@@ -1,167 +1,128 @@
-
-from flask import Flask, request, redirect, render_template, session, url_for
+from flask import Flask, request, render_template, redirect, url_for, session
 from twilio.twiml.messaging_response import MessagingResponse
 import sqlite3
+import os
 
 app = Flask(__name__)
-app.secret_key = 'segredo123'  # Troque por algo seguro
+app.secret_key = 'chave-secreta'
 
-# Config inicial
-ADMIN_EMAIL = 'admin@bot.com'
-ADMIN_SENHA = '1234'
-
-# Banco de dados
+# === Banco de Dados ===
 def init_db():
     conn = sqlite3.connect('agendamentos.db')
-    c = conn.cursor()
-    c.execute('''
+    cursor = conn.cursor()
+    cursor.execute('''
         CREATE TABLE IF NOT EXISTS agendamentos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            telefone TEXT,
-            nome TEXT,
-            horario TEXT
+            nome TEXT NOT NULL,
+            horario TEXT NOT NULL
         )
     ''')
-    c.execute('''
+    cursor.execute('''
         CREATE TABLE IF NOT EXISTS mensagens (
-            chave TEXT PRIMARY KEY,
-            valor TEXT
+            id INTEGER PRIMARY KEY,
+            horario TEXT,
+            cardapio TEXT
         )
     ''')
-    conn.commit()
-
-    # Mensagens padrão
-    defaults = {
-        'horario': 'Segunda a Sexta, das 9h às 18h.',
-        'cardapio': '1. Pizza - R$ 25\n2. Burger - R$ 20\n3. Refri - R$ 5'
-    }
-
-    for chave, valor in defaults.items():
-        c.execute("INSERT OR IGNORE INTO mensagens (chave, valor) VALUES (?, ?)", (chave, valor))
-
+    cursor.execute('INSERT OR IGNORE INTO mensagens (id, horario, cardapio) VALUES (1, "Segunda a Sexta, das 9h às 18h.", "1. Pizza - R$ 25\n2. Burger - R$ 20\n3. Refri - R$ 5")')
     conn.commit()
     conn.close()
 
 init_db()
-agendamento_temp = {}
 
-# ---------------------- ROTAS WHATSAPP ----------------------
-
-@app.route("/whatsapp", methods=["POST"])
-def reply_whatsapp():
-    from_number = request.values.get('From', '')
-    incoming_msg = request.values.get('Body', '').strip().lower()
+# === WhatsApp Bot ===
+@app.route("/whatsapp", methods=['POST'])
+def whatsapp():
+    msg = request.form.get('Body').strip().lower()
     resp = MessagingResponse()
-    msg = resp.message()
+    resposta = resp.message()
 
-    # Ver mensagens personalizadas
-    conn = sqlite3.connect("agendamentos.db")
-    c = conn.cursor()
-    c.execute("SELECT chave, valor FROM mensagens")
-    mensagens_dict = dict(c.fetchall())
-    conn.close()
+    conn = sqlite3.connect('agendamentos.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT horario, cardapio FROM mensagens WHERE id = 1')
+    horario, cardapio = cursor.fetchone()
 
-    # Comando do dono para ver agendamentos
-    if incoming_msg == "ver agendamentos" and from_number == "whatsapp:+5511999999999":
-        conn = sqlite3.connect("agendamentos.db")
-        c = conn.cursor()
-        c.execute("SELECT nome, horario FROM agendamentos ORDER BY id DESC")
-        rows = c.fetchall()
-        conn.close()
-
-        if rows:
-            resposta = "*Agendamentos:*\n" + "\n".join(["- {}, {}".format(nome, horario) for nome, horario in rows])
+    if msg in ['oi', 'olá', 'menu']:
+        resposta.body("Olá! 👋 Bem-vindo! Digite:\n\n1️⃣ Horário\n2️⃣ Cardápio\n3️⃣ Agendar")
+    elif msg == '1':
+        resposta.body(f"Nosso horário de atendimento é:\n{horario}")
+    elif msg == '2':
+        resposta.body(f"Aqui está o cardápio:\n🍕🍔🥤\n{cardapio}")
+    elif msg == '3':
+        resposta.body("Ótimo! Qual o seu nome?")
+        session['agendamento'] = 'nome'
+    elif msg == 'ver agendamentos' and request.form.get('From') == 'whatsapp:+seu_numero_aqui':
+        cursor.execute('SELECT nome, horario FROM agendamentos')
+        agendamentos = cursor.fetchall()
+        if agendamentos:
+            texto = "\n".join([f"{nome} - {hora}" for nome, hora in agendamentos])
         else:
-            resposta = "Nenhum agendamento encontrado."
-        msg.body(resposta)
-        return str(resp)
-
-    # Etapas de agendamento
-    if from_number in agendamento_temp:
-        etapa = agendamento_temp[from_number]["etapa"]
-
-        if etapa == 1:
-            agendamento_temp[from_number]["nome"] = incoming_msg
-            agendamento_temp[from_number]["etapa"] = 2
-            msg.body("Ótimo! Agora diga o horário desejado (ex: amanhã às 14h).")
-        elif etapa == 2:
-            nome = agendamento_temp[from_number]["nome"]
-            horario = incoming_msg
-
-            conn = sqlite3.connect("agendamentos.db")
-            c = conn.cursor()
-            c.execute("INSERT INTO agendamentos (telefone, nome, horario) VALUES (?, ?, ?)",
-                      (from_number, nome, horario))
+            texto = "Nenhum agendamento encontrado."
+        resposta.body(f"📋 Agendamentos:\n{texto}")
+    elif 'agendamento' in session:
+        etapa = session['agendamento']
+        if etapa == 'nome':
+            session['nome'] = msg
+            session['agendamento'] = 'horario'
+            resposta.body("Qual horário deseja agendar?")
+        elif etapa == 'horario':
+            nome = session.pop('nome')
+            horario = msg
+            cursor.execute('INSERT INTO agendamentos (nome, horario) VALUES (?, ?)', (nome, horario))
             conn.commit()
-            conn.close()
-
-            del agendamento_temp[from_number]
-            msg.body(f"Agendamento confirmado para *{nome}* às *{horario}*! ✅")
-        return str(resp)
-
-    # Respostas normais
-    if 'oi' in incoming_msg:
-        msg.body("Olá! 👋 Bem-vindo! Digite:\n1️⃣ Horário\n2️⃣ Cardápio\n3️⃣ Agendar")
-    elif incoming_msg == '1':
-        msg.body(f"Nosso horário de atendimento é: {mensagens_dict.get('horario')}")
-    elif incoming_msg == '2':
-        msg.body(f"Aqui está o cardápio: 🍕🍔🥤\n{mensagens_dict.get('cardapio')}")
-    elif incoming_msg == '3':
-        agendamento_temp[from_number] = {"etapa": 1}
-        msg.body("Vamos agendar! Qual o seu nome?")
+            session.pop('agendamento')
+            resposta.body(f"✅ Agendamento confirmado para {nome} às {horario}")
     else:
-        msg.body("Desculpe, não entendi. Digite 'oi' para ver as opções.")
-    
+        resposta.body("Desculpe, não entendi. Digite 'oi' para começar.")
+
+    conn.close()
     return str(resp)
 
-# ---------------------- ROTAS WEB ----------------------
-
-@app.route("/")
-def index():
-    return redirect("/login")
-
-@app.route("/login", methods=["GET", "POST"])
+# === Painel Web ===
+@app.route("/", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
         email = request.form["email"]
         senha = request.form["senha"]
-        if email == ADMIN_EMAIL and senha == ADMIN_SENHA:
-            session["logado"] = True
-            return redirect("/painel")
+        if email == "admin@bot.com" and senha == "1234":
+            session["usuario"] = email
+            return redirect(url_for("painel"))
     return render_template("login.html")
 
 @app.route("/painel")
 def painel():
-    if not session.get("logado"):
-        return redirect("/login")
-    conn = sqlite3.connect("agendamentos.db")
-    c = conn.cursor()
-    c.execute("SELECT nome, horario FROM agendamentos ORDER BY id DESC")
-    agendamentos = c.fetchall()
+    if "usuario" not in session:
+        return redirect(url_for("login"))
+    conn = sqlite3.connect('agendamentos.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT nome, horario FROM agendamentos')
+    agendamentos = cursor.fetchall()
     conn.close()
     return render_template("painel.html", agendamentos=agendamentos)
 
 @app.route("/editar", methods=["GET", "POST"])
 def editar():
-    if not session.get("logado"):
-        return redirect("/login")
-    conn = sqlite3.connect("agendamentos.db")
-    c = conn.cursor()
+    if "usuario" not in session:
+        return redirect(url_for("login"))
+    conn = sqlite3.connect('agendamentos.db')
+    cursor = conn.cursor()
     if request.method == "POST":
-        horario = request.form["horario"]
-        cardapio = request.form["cardapio"]
-        c.execute("UPDATE mensagens SET valor = ? WHERE chave = 'horario'", (horario,))
-        c.execute("UPDATE mensagens SET valor = ? WHERE chave = 'cardapio'", (cardapio,))
+        novo_horario = request.form["horario"]
+        novo_cardapio = request.form["cardapio"]
+        cursor.execute('UPDATE mensagens SET horario = ?, cardapio = ? WHERE id = 1', (novo_horario, novo_cardapio))
         conn.commit()
-    c.execute("SELECT chave, valor FROM mensagens")
-    mensagens = dict(c.fetchall())
+        return redirect(url_for("painel"))
+    cursor.execute('SELECT horario, cardapio FROM mensagens WHERE id = 1')
+    horario, cardapio = cursor.fetchone()
     conn.close()
-    return render_template("editar.html", mensagens=mensagens)
+    return render_template("editar.html", horario=horario, cardapio=cardapio)
 
 @app.route("/logout")
 def logout():
     session.clear()
-    return redirect("/login")
+    return redirect(url_for("login"))
 
+# === Início da aplicação (com suporte ao Render) ===
 if __name__ == "__main__":
-    app.run(debug=True)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=True)
