@@ -1,3 +1,4 @@
+
 from flask import Flask, request, render_template, redirect, url_for, session
 from twilio.twiml.messaging_response import MessagingResponse
 import sqlite3
@@ -19,12 +20,19 @@ def init_db():
     ''')
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS mensagens (
-            id INTEGER PRIMARY KEY,
-            horario TEXT,
-            cardapio TEXT
+            chave TEXT PRIMARY KEY,
+            valor TEXT
         )
     ''')
-    cursor.execute('INSERT OR IGNORE INTO mensagens (id, horario, cardapio) VALUES (1, "Segunda a Sexta, das 9h às 18h.", "1. Pizza - R$ 25\n2. Burger - R$ 20\n3. Refri - R$ 5")')
+
+    mensagens_padrao = {
+        'horario': 'Segunda a Sexta, das 9h às 18h.',
+        'cardapio': '1. Pizza - R$ 25\n2. Burger - R$ 20\n3. Refri - R$ 5'
+    }
+
+    for chave, valor in mensagens_padrao.items():
+        cursor.execute('INSERT OR IGNORE INTO mensagens (chave, valor) VALUES (?, ?)', (chave, valor))
+
     conn.commit()
     conn.close()
 
@@ -39,8 +47,10 @@ def whatsapp():
 
     conn = sqlite3.connect('agendamentos.db')
     cursor = conn.cursor()
-    cursor.execute('SELECT horario, cardapio FROM mensagens WHERE id = 1')
-    horario, cardapio = cursor.fetchone()
+    cursor.execute("SELECT valor FROM mensagens WHERE chave = 'horario'")
+    horario = cursor.fetchone()[0]
+    cursor.execute("SELECT valor FROM mensagens WHERE chave = 'cardapio'")
+    cardapio = cursor.fetchone()[0]
 
     if msg in ['oi', 'olá', 'menu']:
         resposta.body("Olá! 👋 Bem-vindo! Digite:\n\n1️⃣ Horário\n2️⃣ Cardápio\n3️⃣ Agendar")
@@ -109,13 +119,14 @@ def editar():
     if request.method == "POST":
         novo_horario = request.form["horario"]
         novo_cardapio = request.form["cardapio"]
-        cursor.execute('UPDATE mensagens SET horario = ?, cardapio = ? WHERE id = 1', (novo_horario, novo_cardapio))
+        cursor.execute("UPDATE mensagens SET valor = ? WHERE chave = 'horario'", (novo_horario,))
+        cursor.execute("UPDATE mensagens SET valor = ? WHERE chave = 'cardapio'", (novo_cardapio,))
         conn.commit()
         return redirect(url_for("painel"))
-    cursor.execute('SELECT horario, cardapio FROM mensagens WHERE id = 1')
-    horario, cardapio = cursor.fetchone()
+    cursor.execute("SELECT chave, valor FROM mensagens")
+    mensagens = dict(cursor.fetchall())
     conn.close()
-    return render_template("editar.html", horario=horario, cardapio=cardapio)
+    return render_template("editar.html", horario=mensagens.get("horario"), cardapio=mensagens.get("cardapio"))
 
 @app.route("/logout")
 def logout():
